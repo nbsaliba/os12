@@ -51,6 +51,7 @@ function animate(now = performance.now()){
   // Narrations par proximité
   checkNarrTriggers(camPos);
   checkPOIApproach(camPos);
+  checkPOIProximityPause(camPos);
 
   // Fondu sonore à l'approche des haltes typées — désactivé à la demande.
   // if (typeof updateAmbientProximity === 'function') updateAmbientProximity(camPos);
