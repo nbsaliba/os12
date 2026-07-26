@@ -112,6 +112,7 @@ function animate(now = performance.now()){
     o.marker.position.y=(o.data.y||0) + 3 + Math.sin(frameCount*.04+o.data.z)*0.5;
     o.rMat.opacity=d<25 ? 0.65 : 0.25;
   });
+  if (typeof updatePOIDirectionArrow === 'function') updatePOIDirectionArrow(camPos);
 
   if(currentView==='map'&&frameCount%2===0){
     drawMap(camPos, camDir); mapTex2.needsUpdate=true;
