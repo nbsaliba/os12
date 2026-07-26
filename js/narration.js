@@ -8,7 +8,6 @@
 //     → B continue de jouer EN ARRIÈRE-PLAN pendant qu'on marche
 let currentNarr   = null; // narration dont l'audio joue actuellement (peut jouer pendant la marche)
 let pendingNarr   = null; // narration en attente, déclenchée dès que currentNarr se termine
-let blockedAtNarr = false;// true = la marche est figée (on attend la fin de la narration EN ATTENTE avant elle)
 let narrAudio     = null; // HTMLAudioElement pour MP3
 let narrPoints    = [];   // points de déclenchement chargés
 const DEFAULT_TRIGGER_RADIUS = 30;
@@ -27,13 +26,10 @@ function playNarration(n, blockUntilDone) {
 
   if (!blockUntilDone) {
     // Débloque la marche immédiatement — la narration continue en arrière-plan.
-    // On relance aussi startWalking() : si la marche avait été stoppée de force
-    // par blockWalking() (point atteint pendant une narration précédente),
-    // ce n'était pas un arrêt utilisateur, donc pas à l'utilisateur de la
-    // relancer manuellement. Sans effet si la marche n'a jamais été
-    // interrompue (startWalking() ignore l'appel tant que isWalking est déjà true).
-    unblockWalking();
-    startWalking();
+    // resumeWalking() ne relance réellement que si walkIntent est vrai et
+    // qu'aucune autre raison de pause n'est active (POI ouvert, etc.) —
+    // sans effet si la marche n'avait jamais été interrompue.
+    resumeWalking('narration');
   }
 
   const release = () => {
@@ -43,15 +39,9 @@ function playNarration(n, blockUntilDone) {
       const next = pendingNarr;
       pendingNarr = null;
       playNarration(next, false); // débloque dans playNarration via !blockUntilDone
-    } else if (blockedAtNarr) {
-      // Plus rien en attente — débloque la marche, et la relance automatiquement :
-      // l'arrêt venait du blocage (checkNarrTriggers ne se déclenche que pendant
-      // la marche), jamais d'un clic utilisateur — ce n'est donc pas à
-      // l'utilisateur de relancer manuellement. startWalking() reste sans effet
-      // si une reprise a déjà eu lieu entre-temps (ex: pas du podomètre).
-      unblockWalking();
-      startWalking();
     }
+    // Sinon : rien à faire ici — resumeWalking('narration') a déjà eu lieu au
+    // lancement de CETTE narration (voir plus haut), pas la peine de le refaire.
   };
 
   if (n.audio_file && n.audioBlobURL) {
@@ -84,25 +74,21 @@ function playNarration(n, blockUntilDone) {
 // besoin de resynchroniser l'affichage sans forcer un état particulier (ex: à
 // la levée d'un blocage, où la marche peut être encore active en arrière-plan
 // ou avoir déjà repris via un pas de podomètre).
+// Reflète l'état RÉEL de la marche sur le bouton (isWalking + raisons de
+// pause actives) — seul endroit qui écrit ce libellé, appelé par _setMoving()
+// dans speech.js à chaque changement d'état, ainsi qu'ici après pauseWalking().
 function updateStepBtnLabel() {
   const btn = document.getElementById('step-btn');
   const mobile = typeof isMobile === 'function' && isMobile();
+  if (walkPauseReasons.has('narration')) {
+    btn.classList.add('blocked');
+    btn.style.background = 'rgba(255,210,140,.15)';
+    btn.innerHTML = '⏸ Écoute en cours…';
+    return;
+  }
+  btn.classList.remove('blocked');
   btn.style.background = isWalking ? 'rgba(255,210,140,.35)' : 'rgba(255,210,140,.15)';
   btn.innerHTML = mobile ? (isWalking ? '⏸ Arrêter' : '▶ Marche auto') : '▶ Marcher';
-}
-
-function unblockWalking() {
-  blockedAtNarr = false;
-  document.getElementById('step-btn').classList.remove('blocked');
-  updateStepBtnLabel();
-}
-
-function blockWalking() {
-  blockedAtNarr = true;
-  isWalking = false;
-  document.getElementById('step-btn').style.background = 'rgba(255,210,140,.15)';
-  document.getElementById('step-btn').classList.add('blocked');
-  document.getElementById('step-btn').innerHTML = '⏸ Écoute en cours…';
 }
 
 function triggerNarration(n) {
@@ -113,7 +99,8 @@ function triggerNarration(n) {
     // Une narration précédente joue encore — on bloque la marche
     // et on met ce point en attente. Dès que la précédente finit,
     // ce point se lancera avec blockUntilDone=false (marche débloquée immédiatement)
-    blockWalking();
+    pauseWalking('narration');
+    updateStepBtnLabel();
     pendingNarr = n;
   } else {
     // Rien ne joue — on lance directement SANS bloquer la marche
@@ -125,7 +112,7 @@ function triggerNarration(n) {
 // Vérifie la proximité à chaque frame (appelé dans animate)
 // Se déclenche même si une narration précédente est encore en train de jouer
 function checkNarrTriggers(camPos) {
-  if (blockedAtNarr) return; // déjà figé sur un point en attente — pas de nouveau check
+  if (walkPauseReasons.has('narration')) return; // déjà figé sur un point en attente — pas de nouveau check
   for (const n of narrPoints) {
     if (n.played) continue;
     const dx = camPos.x - n.x;
@@ -144,8 +131,7 @@ function stopNarration() {
   if (narrAudio) { narrAudio.pause(); narrAudio = null; }
   currentNarr = null;
   pendingNarr = null;
-  blockedAtNarr = false;
-  document.getElementById('step-btn').classList.remove('blocked');
+  walkPauseReasons.delete('narration');
   updateStepBtnLabel();
   document.getElementById('narrative-box').style.opacity = '0';
 }
@@ -177,6 +163,34 @@ function checkPOIApproach(camPos) {
         audioBlobURL: null,
       });
       break; // une seule annonce par frame, comme pour checkNarrTriggers
+    }
+  }
+}
+
+// ── Pause automatique à l'approche d'un POI, en mode Marche auto UNIQUEMENT ──
+// En podomètre, l'avancement suit les pas réels : s'arrêter pour un POI est
+// déjà entièrement entre les mains de l'utilisateur (il suffit de s'arrêter
+// de marcher), donc forcer une pause ici casserait le lien pas-réel = avancement.
+// En Marche auto, rien ne freine naturellement l'avatar — d'où cette pause,
+// une seule fois par POI non visité, pour laisser le temps de cliquer dessus.
+// Levée soit par l'ouverture du POI (openPOIInteraction), soit par un nouveau
+// clic sur "Marche auto" (choix assumé de laisser ce POI de côté) — voir
+// startWalking() dans speech.js.
+const POI_PROXIMITY_PAUSE_RADIUS = 16; // m — un peu avant l'annonce vocale (20m)
+
+function checkPOIProximityPause(camPos) {
+  if (typeof accelMode !== 'undefined' && accelMode) return; // inutile/contre-productif en podomètre
+  if (typeof poiObjects === 'undefined' || !poiObjects.length) return;
+  for (const o of poiObjects) {
+    const p = o.data;
+    if (p.proximityPaused) continue;
+    const key = (typeof poiKey === 'function') ? poiKey(p) : null;
+    if (key && typeof poiFragments !== 'undefined' && poiFragments[key]) { p.proximityPaused = true; continue; } // déjà visité
+    const dx = camPos.x - p.x, dz = camPos.z - p.z;
+    if (Math.sqrt(dx*dx + dz*dz) <= POI_PROXIMITY_PAUSE_RADIUS) {
+      p.proximityPaused = true;
+      pauseWalking('poi-proximity');
+      break; // une seule pause déclenchée par frame
     }
   }
 }
