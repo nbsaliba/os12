@@ -125,6 +125,28 @@ function checkNarrTriggers(camPos) {
   }
 }
 
+// Annule l'annonce d'approche (en cours OU en attente) d'un POI donné — à
+// appeler dès que ce POI est ouvert par un clic, puisque l'utilisateur est
+// déjà en train de le consulter : l'annonce n'a plus lieu d'être, ni tout de
+// suite, ni plus tard une fois qu'une narration en cours se termine.
+function cancelPOIApproachAnnouncement(poi) {
+  let cleared = false;
+  if (pendingNarr && pendingNarr.poiApproachFor === poi) {
+    pendingNarr = null;
+    cleared = true;
+  }
+  if (currentNarr && currentNarr.poiApproachFor === poi) {
+    synth.cancel();
+    if (narrAudio) { narrAudio.pause(); narrAudio = null; }
+    currentNarr = null;
+    cleared = true;
+  }
+  if (cleared) {
+    walkPauseReasons.delete('narration'); // l'annonce avait pu mettre la marche en pause
+    updateStepBtnLabel();
+  }
+}
+
 // Coupe tout (utilisé au reset complet du parcours)
 function stopNarration() {
   synth.cancel();
@@ -161,6 +183,7 @@ function checkPOIApproach(camPos) {
         audio_text: p.props.approche_text,
         audio_file: null,
         audioBlobURL: null,
+        poiApproachFor: p, // référence au POI — permet d'annuler cette annonce si le POI est ouvert avant qu'elle ne joue
       });
       break; // une seule annonce par frame, comme pour checkNarrTriggers
     }
