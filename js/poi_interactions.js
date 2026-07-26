@@ -50,6 +50,7 @@ function poiType(poi) {
 // Point d'entrée appelé au clic sur un POI (scène 3D ou panneau carte)
 function openPOIInteraction(poi) {
   poi.announced = true; // découvert par clic — plus besoin de l'annoncer à l'approche
+  walkPauseReasons.delete('poi-proximity'); // résout toute pause de proximité en attente pour ce POI
   const type = poiType(poi);
   if (!type) {
     // Comportement historique : narration simple
@@ -65,7 +66,7 @@ function openPOIInteraction(poi) {
 
   activePOI = poi;
   poiOverlayOpen = true;
-  stopWalking();
+  pauseWalking('poi');
   fadeOutAmbient(key);
   unlockAmbientAudio();
 
@@ -88,11 +89,9 @@ function closePOIOverlay() {
   document.getElementById('poi-overlay').classList.remove('visible');
   poiOverlayOpen = false;
   activePOI = null;
-  // L'arrêt à l'ouverture du POI était forcé par le système (openPOIInteraction
-  // appelle stopWalking()), pas une décision de l'utilisateur — donc on relance
-  // automatiquement, comme pour la reprise après une narration. Sans effet si
-  // la marche a déjà repris entre-temps (ex: pas du podomètre déjà détecté).
-  startWalking();
+  // Ne relance que si walkIntent est vrai ET qu'aucune autre raison de pause
+  // n'est active (ex: une narration en cours) — voir speech.js.
+  resumeWalking('poi');
 }
 
 function collectPOIFragment(fragment) {
@@ -415,6 +414,10 @@ function renderPOIRecap() {
 function resetPOIInteractions() {
   poiFragments = {};
   closePOIOverlay();
+  walkPauseReasons.delete('poi-proximity');
+  if (typeof poiObjects !== 'undefined') {
+    poiObjects.forEach(o => { o.data.announced = false; o.data.proximityPaused = false; });
+  }
   ambientVoices.forEach((v, key) => fadeOutAmbient(key));
   updateCarnetBadge();
 }
