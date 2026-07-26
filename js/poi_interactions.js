@@ -53,8 +53,20 @@ function openPOIInteraction(poi) {
   walkPauseReasons.delete('poi-proximity'); // résout toute pause de proximité en attente pour ce POI
   const type = poiType(poi);
   if (!type) {
-    // Comportement historique : narration simple
-    showNarrative(poi.desc || poi.name, poi.audio_text || poi.desc || poi.name);
+    // Comportement historique : passe par la même file d'attente que les
+    // narrations classiques (currentNarr/pendingNarr) au lieu d'appeler
+    // speak() directement — un appel direct ferait un synth.cancel()
+    // inconditionnel, qui coupe et termine prématurément une narration en
+    // cours (déclenchant par effet de bord tout ce qui était en attente
+    // derrière elle, juste au moment où on ouvre ce POI).
+    triggerNarration({
+      played: false,
+      name: poi.name,
+      texte: poi.desc || poi.name,
+      audio_text: poi.audio_text || poi.desc || poi.name,
+      audio_file: null,
+      audioBlobURL: null,
+    });
     return;
   }
   const key = poiKey(poi);
