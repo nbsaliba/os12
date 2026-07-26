@@ -51,6 +51,7 @@ function poiType(poi) {
 function openPOIInteraction(poi) {
   poi.announced = true; // découvert par clic — plus besoin de l'annoncer à l'approche
   walkPauseReasons.delete('poi-proximity'); // résout toute pause de proximité en attente pour ce POI
+  if (typeof cancelPOIApproachAnnouncement === 'function') cancelPOIApproachAnnouncement(poi);
   const type = poiType(poi);
   if (!type) {
     // Comportement historique : passe par la même file d'attente que les
