@@ -35,6 +35,8 @@ function loadVoices(){
 loadVoices();
 if(synth.onvoiceschanged!==undefined) synth.onvoiceschanged=loadVoices;
 
+let currentUtterance = null; // référence à l'utterance en cours, pour neutraliser son callback avant de la couper
+
 function speak(t){
   speakWithCallback(t, null);
 }
@@ -44,6 +46,12 @@ function speakWithCallback(t, onDone){
   if(!synthUnlocked){
     pendingSpeech = t; if(onDone) onDone(); return;
   }
+  // Neutralise le callback de l'utterance précédente AVANT de la couper :
+  // synth.cancel() déclenche 'end' sur l'utterance en cours, ce qui
+  // appellerait sinon prématurément son onDone/release() (ex: reprise
+  // intempestive d'une narration mise en attente derrière elle), alors que
+  // cette narration a simplement été interrompue, pas terminée normalement.
+  if (currentUtterance) { currentUtterance.onend = null; currentUtterance.onerror = null; }
   synth.cancel();
   const u=new SpeechSynthesisUtterance(t);
   u.lang='fr-FR'; u.rate=0.88; u.pitch=0.95;
@@ -52,6 +60,7 @@ function speakWithCallback(t, onDone){
     u.onend   = onDone;
     u.onerror = onDone;
   }
+  currentUtterance = u;
   try { synth.speak(u); } catch(e){ console.warn('speak error:',e); if(onDone) onDone(); }
 }
 
