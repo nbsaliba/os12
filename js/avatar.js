@@ -100,3 +100,53 @@ function buildPOIMarkers(){
   });
   if (typeof updateCarnetBadge === 'function') updateCarnetBadge();
 }
+
+// ── Flèche discrète vers un POI proche mais hors champ ──────────────────────
+// Pure indication visuelle : ne touche jamais à la caméra. L'utilisateur se
+// réoriente lui-même via le glisser existant (lookYaw/lookPitch, core.js).
+// Visible même en marchant (le glisser, lui, n'est actif qu'à l'arrêt) — pour
+// que l'utilisateur sache qu'il faudra s'arrêter puis se tourner par là.
+const POI_ARROW_RADIUS = 40; // m — un peu avant les seuils de couleur/pause existants
+const POI_ARROW_MARGIN = 0.85; // reste dans [-0.85,0.85] en coordonnées écran normalisées
+
+function updatePOIDirectionArrow(camPos) {
+  const el = document.getElementById('poi-direction-arrow');
+  if (!el) return;
+  if (currentView !== 'fps' || (typeof poiOverlayOpen !== 'undefined' && poiOverlayOpen) || !poiObjects.length) {
+    el.style.display = 'none';
+    return;
+  }
+
+  // POI non visité le plus proche, dans le rayon de pertinence
+  let best = null, bestDist = Infinity;
+  for (const o of poiObjects) {
+    const p = o.data;
+    const key = (typeof poiKey === 'function') ? poiKey(p) : null;
+    if (key && typeof poiFragments !== 'undefined' && poiFragments[key]) continue; // déjà visité
+    const dx = camPos.x - p.x, dz = camPos.z - p.z;
+    const dist = Math.sqrt(dx*dx + dz*dz);
+    if (dist <= POI_ARROW_RADIUS && dist < bestDist) { bestDist = dist; best = o; }
+  }
+  if (!best) { el.style.display = 'none'; return; }
+
+  const ndc = best.marker.position.clone().project(activeCamera);
+  const behind = ndc.z > 1;
+  const onScreen = !behind && Math.abs(ndc.x) <= POI_ARROW_MARGIN && Math.abs(ndc.y) <= POI_ARROW_MARGIN;
+  if (onScreen) { el.style.display = 'none'; return; } // déjà visible à l'écran, pas besoin d'indice
+
+  // Si le POI est derrière la caméra, on inverse pour pointer vers l'arrière du bon côté
+  let x = behind ? -ndc.x : ndc.x;
+  let y = behind ? -ndc.y : ndc.y;
+  x = Math.max(-POI_ARROW_MARGIN, Math.min(POI_ARROW_MARGIN, x));
+  y = Math.max(-POI_ARROW_MARGIN, Math.min(POI_ARROW_MARGIN, y));
+
+  const w = window.innerWidth, h = window.innerHeight;
+  const screenX = (x * 0.5 + 0.5) * w;
+  const screenY = (1 - (y * 0.5 + 0.5)) * h;
+  const angleDeg = Math.atan2(x, y) * 180 / Math.PI; // 0° = vers le haut, sens horaire
+
+  el.style.left = screenX + 'px';
+  el.style.top  = screenY + 'px';
+  el.style.transform = `translate(-50%,-50%) rotate(${angleDeg}deg)`;
+  el.style.display = 'flex';
+}
