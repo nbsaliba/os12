@@ -83,34 +83,64 @@ const narratives=[];  // rempli depuis les POI GeoJSON (audio_text)
 let bobPhase=0, isWalking=false, totalDist=0, displayedDist=0, frameCount=0, ended=false;
 pathT=0;
 
-function startWalking(){
-  if (ended || pathPoints.length<=1 || isWalking || poiOverlayOpen) return;
-  unlockSynth(); // débloque speechSynthesis au premier geste
-  if (typeof unlockAmbientAudio === 'function') unlockAmbientAudio(); // débloque le fondu sonore des POI
+// ── Système unifié de marche : intention utilisateur + raisons de pause ────
+// walkIntent      : true dès qu'un déclencheur UTILISATEUR (bouton, pas du
+//                    podomètre, ESPACE) veut avancer. Redevient false uniquement
+//                    sur un arrêt VOULU (bouton, plus de pas détecté).
+// walkPauseReasons : raisons SYSTÉMIQUES empêchant la marche là, maintenant
+//                    ('narration', 'poi', 'poi-proximity'...). Ajoutées/retirées
+//                    par pauseWalking()/resumeWalking(), jamais par l'utilisateur
+//                    directement. La marche ne reprend que quand walkIntent est
+//                    vrai ET qu'aucune raison n'est active — ainsi un arrêt
+//                    systémique ne peut jamais être confondu avec une décision
+//                    de l'utilisateur (et vice versa).
+let walkIntent = false;
+const walkPauseReasons = new Set();
 
-  // Bloqué uniquement si on est figé sur un point en attente d'une narration précédente.
-  // currentNarr peut être non-null (audio qui joue en fond) sans empêcher la marche.
-  if (blockedAtNarr) return;
-
-  isWalking = true;
-  document.getElementById('step-btn').style.background = 'rgba(255,210,140,.35)';
-  document.getElementById('step-btn').innerHTML = (typeof isMobile==='function' && isMobile()) ? '⏸ Arrêter' : '▶ Marcher'; // toujours actif, même si currentNarr joue en fond
-  // Le rappel des contrôles ne sert plus une fois qu'on a commencé à marcher,
-  // et prend trop de place à l'écran sur mobile — on le masque en fondu,
-  // quelle que soit la façon dont la marche a démarré (bouton, ESPACE, podomètre).
-  const hint = document.getElementById('hint');
-  if (hint) hint.classList.add('hint-hidden');
-}
-function stopWalking(){
-  if (!isWalking) return; // déjà arrêté, ignore l'appel redondant
-  isWalking=false;
-  // Si on est bloqué à un point narratif, le bouton garde son style "bloqué"
-  if (!blockedAtNarr) {
-    document.getElementById('step-btn').style.background='rgba(255,210,140,.15)';
-    document.getElementById('step-btn').innerHTML = (typeof isMobile==='function' && isMobile()) ? '▶ Marche auto' : '▶ Marcher';
+function _setMoving(v) {
+  if (isWalking === v) return;
+  isWalking = v;
+  if (v) {
+    unlockSynth(); // débloque speechSynthesis au premier geste
+    if (typeof unlockAmbientAudio === 'function') unlockAmbientAudio(); // débloque le fondu sonore des POI
+    // Le rappel des contrôles ne sert plus une fois qu'on a commencé à marcher,
+    // et prend trop de place à l'écran sur mobile.
+    const hint = document.getElementById('hint');
+    if (hint) hint.classList.add('hint-hidden');
   }
-  // La narration en cours n'est PAS coupée — elle continue jusqu'au bout
-  // même si l'utilisateur relâche le bouton manuellement
+  if (typeof updateStepBtnLabel === 'function') updateStepBtnLabel();
+}
+
+function _tryResumeWalking() {
+  if (ended || pathPoints.length<=1) return;
+  if (!walkIntent || walkPauseReasons.size > 0) return;
+  _setMoving(true);
+}
+
+// Déclencheurs UTILISATEUR (bouton "Marche auto", pas du podomètre, ESPACE).
+function startWalking(){
+  walkIntent = true;
+  // Un déclencheur utilisateur explicite vaut décision de continuer malgré
+  // une halte POI suggérée — mais PAS malgré une narration ou un POI ouvert,
+  // qui doivent se résoudre d'eux-mêmes (fin de narration, fermeture du POI).
+  walkPauseReasons.delete('poi-proximity');
+  _tryResumeWalking();
+}
+// Déclencheurs UTILISATEUR (bouton "Arrêter", relâchement, plus de pas détecté).
+function stopWalking(){
+  walkIntent = false;
+  _setMoving(false);
+}
+
+// Pauses SYSTÉMIQUES (narration, POI, proximité POI en mode auto) — jamais
+// appelées directement par un clic/pas utilisateur.
+function pauseWalking(reason) {
+  walkPauseReasons.add(reason);
+  _setMoving(false);
+}
+function resumeWalking(reason) {
+  walkPauseReasons.delete(reason);
+  _tryResumeWalking();
 }
 
 function setView(v){
