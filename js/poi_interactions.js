@@ -88,6 +88,11 @@ function closePOIOverlay() {
   document.getElementById('poi-overlay').classList.remove('visible');
   poiOverlayOpen = false;
   activePOI = null;
+  // L'arrêt à l'ouverture du POI était forcé par le système (openPOIInteraction
+  // appelle stopWalking()), pas une décision de l'utilisateur — donc on relance
+  // automatiquement, comme pour la reprise après une narration. Sans effet si
+  // la marche a déjà repris entre-temps (ex: pas du podomètre déjà détecté).
+  startWalking();
 }
 
 function collectPOIFragment(fragment) {
