@@ -108,9 +108,23 @@ function animate(now = performance.now()){
   // POI markers
   poiObjects.forEach(o=>{
     const d=camPos.distanceTo(o.marker.position);
-    o.mat.color.setHex(d<10?0xff3300:0xffaa00);
+    // Rouge de très près, orange vif dans la zone active (≤ POI_CLICK_RADIUS),
+    // teinte terne/désaturée au-delà — signal honnête : "quelque chose est là,
+    // mais pas encore prêt", sans texte ni disparition du marqueur.
+    const clickR = (typeof POI_CLICK_RADIUS === 'number') ? POI_CLICK_RADIUS : 20;
+    o.mat.color.setHex(d<10 ? 0xff3300 : d<=clickR ? 0xffaa00 : 0x8a7a5c);
     o.marker.position.y=(o.data.y||0) + 3 + Math.sin(frameCount*.04+o.data.z)*0.5;
     o.rMat.opacity=d<25 ? 0.65 : 0.25;
+
+    // Sursaut si on a cliqué trop tôt (hors de POI_CLICK_RADIUS) — confirme
+    // la réception du clic sans ouvrir le POI ni rien écrire à l'écran.
+    let scale = 1;
+    if (o.bounceStart) {
+      const t = (performance.now() - o.bounceStart) / 400;
+      if (t < 1) scale = 1 + Math.sin(t*Math.PI)*0.35;
+      else o.bounceStart = null;
+    }
+    o.marker.scale.setScalar(scale);
   });
   if (typeof updatePOIDirectionArrow === 'function') updatePOIDirectionArrow(camPos);
 
