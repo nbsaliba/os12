@@ -365,6 +365,15 @@ function showAttr(props, sx, sy){
 }
 function closeAttr(){ document.getElementById('attr-popup').classList.remove('visible'); }
 
+// ── Distance minimale requise pour qu'un clic sur un POI l'ouvre réellement ──
+// Sans ça, on peut "consommer" un POI vu au loin avant même d'être arrivé sur
+// les lieux — ça casse le lien entre "arriver quelque part" et "découvrir
+// quelque chose" que l'annonce d'approche / la pause automatique construisent
+// déjà. Volontairement la même valeur que POI_APPROACH_RADIUS : "pouvoir
+// l'ouvrir" coïncide avec "être dans la zone où les autres mécanismes se
+// déclenchent déjà" — un seul rayon de référence à retenir/ajuster.
+const POI_CLICK_RADIUS = 20; // m
+
 canvas.addEventListener('click',e=>{
   unlockSynth();
   if (typeof unlockAmbientAudio === 'function') unlockAmbientAudio();
@@ -378,7 +387,19 @@ canvas.addEventListener('click',e=>{
   if (poiHits.length>0) {
     const hitObj = poiHits[0].object;
     const poi = poiObjects.find(o=>o.marker===hitObj||o.ring===hitObj);
-    if (poi) { openPOIInteraction(poi.data); return; }
+    if (poi) {
+      const dist = activeCamera.position.distanceTo(poi.marker.position);
+      if (dist <= POI_CLICK_RADIUS) {
+        openPOIInteraction(poi.data);
+      } else {
+        // Trop loin pour interagir — un simple sursaut visuel du marqueur,
+        // sans texte ni ouverture : confirme que le clic est reçu sans rien
+        // dévoiler avant l'heure (cohérent avec la teinte terne du marqueur
+        // au-delà de POI_CLICK_RADIUS — voir animate.js).
+        poi.bounceStart = performance.now();
+      }
+      return;
+    }
   }
 
   const hits=raycaster.intersectObjects(buildingMeshes);
