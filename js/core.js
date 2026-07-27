@@ -27,6 +27,25 @@ const mapCam    = new THREE.OrthographicCamera(-2000,2000,1400,-1400, 1, 100000)
 mapCam.position.set(0, 5000, 0); mapCam.lookAt(0,0,0);
 let activeCamera = fpsCam, currentView = 'fps';
 
+// Three.js applique le FOV donné VERTICALEMENT ; le FOV horizontal réel
+// dépend de l'aspect ratio (hFOV = 2·atan(tan(vFOV/2) × aspect)). En portrait
+// mobile (aspect ≈ 0.46), un FOV vertical de 68° ne donne qu'environ 34° de
+// FOV horizontal — un POI proche mais décalé du chemin peut alors sortir du
+// champ précisément en s'en approchant. On élève donc le FOV vertical sur les
+// écrans étroits pour garantir un FOV horizontal minimum, quitte à accepter
+// un peu plus de déformation verticale (grand-angle) en contrepartie.
+const FPS_BASE_VFOV = 68; // FOV vertical de base (desktop / paysage)
+const FPS_MIN_HFOV  = 58; // FOV horizontal minimum visé, même en portrait serré
+
+function computeFpsVFov(aspect) {
+  const baseHfov = THREE.MathUtils.radToDeg(
+    2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(FPS_BASE_VFOV) / 2) * aspect)
+  );
+  if (baseHfov >= FPS_MIN_HFOV) return FPS_BASE_VFOV; // déjà assez large (paysage/desktop) — inchangé
+  const minHfovRad = THREE.MathUtils.degToRad(FPS_MIN_HFOV);
+  return THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(minHfovRad / 2) / aspect));
+}
+
 // Réajuste le rendu quand la taille de la fenêtre change réellement
 // (rotation d'écran, ou barre d'adresse mobile qui apparaît/disparaît).
 // Sans ceci, le canvas garde la taille calculée au chargement et peut
@@ -41,6 +60,7 @@ function onViewportResize() {
   const h = vv ? Math.round(vv.height) : window.innerHeight;
   renderer.setSize(w, h);
   fpsCam.aspect = w / h;
+  fpsCam.fov = computeFpsVFov(fpsCam.aspect);
   fpsCam.updateProjectionMatrix();
   aerialCam.aspect = w / h;
   aerialCam.updateProjectionMatrix();
@@ -53,6 +73,7 @@ if (window.visualViewport) {
   // seul 'resize' de window sur mobile.
   window.visualViewport.addEventListener('resize', onViewportResize);
 }
+onViewportResize(); // applique aussi le FOV adaptatif dès le chargement initial
 
 // Certains navigateurs mobiles (Safari iOS notamment) ne recalculent pas
 // correctement les unités CSS (vw/vh/dvh, media queries) après un aller-retour
