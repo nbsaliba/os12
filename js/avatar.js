@@ -73,9 +73,9 @@ function updateAvatar(camPos, camDir, currentView) {
 // ══════════════════════════════════════════════════════════
 let poiObjects=[], poiData=[];
 // Rayon sphère POI = 2m réels, anneau = 5-8m réels
-const POI_R  = 2;
-const RING_R1 = 5;
-const RING_R2 = 8;
+const POI_R  = 0.5;
+const RING_R1 = 1.25;
+const RING_R2 = 2;
 const mGeo=new THREE.SphereGeometry(POI_R, 8, 8);
 const rBaseGeo=new THREE.RingGeometry(RING_R1, RING_R2, 20);
 rBaseGeo.rotateX(-Math.PI/2);
