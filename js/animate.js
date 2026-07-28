@@ -113,18 +113,26 @@ function animate(now = performance.now()){
     // mais pas encore prêt", sans texte ni disparition du marqueur.
     const clickR = (typeof POI_CLICK_RADIUS === 'number') ? POI_CLICK_RADIUS : 20;
     o.mat.color.setHex(d<10 ? 0xff3300 : d<=clickR ? 0xffaa00 : 0x8a7a5c);
-    o.marker.position.y=(o.data.y||0) + 3 + Math.sin(frameCount*.04+o.data.z)*0.5;
+    // Position stable — plus de rebond vertical (ça décalait la cible réelle
+    // du clic ET de la flèche directionnelle, la faisant "gigoter"). Le signe
+    // de vie se fait maintenant uniquement par pulsation d'échelle ci-dessous,
+    // qui ne déplace jamais le marqueur.
+    o.marker.position.y=(o.data.y||0) + 3;
     o.rMat.opacity=d<25 ? 0.65 : 0.25;
+
+    // Pulsation d'échelle discrète (±9%, en % de la taille courante — reste
+    // valable quel que soit POI_R choisi plus tard, rien à réajuster ici).
+    const idlePulse = 1 + Math.sin(frameCount*.04 + o.data.z) * 0.09;
 
     // Sursaut si on a cliqué trop tôt (hors de POI_CLICK_RADIUS) — confirme
     // la réception du clic sans ouvrir le POI ni rien écrire à l'écran.
-    let scale = 1;
+    let bounce = 1;
     if (o.bounceStart) {
       const t = (performance.now() - o.bounceStart) / 400;
-      if (t < 1) scale = 1 + Math.sin(t*Math.PI)*0.35;
+      if (t < 1) bounce = 1 + Math.sin(t*Math.PI)*0.35;
       else o.bounceStart = null;
     }
-    o.marker.scale.setScalar(scale);
+    o.marker.scale.setScalar(idlePulse * bounce);
   });
   if (typeof updatePOIDirectionArrow === 'function') updatePOIDirectionArrow(camPos);
 

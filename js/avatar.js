@@ -73,18 +73,9 @@ function updateAvatar(camPos, camDir, currentView) {
 // ══════════════════════════════════════════════════════════
 let poiObjects=[], poiData=[];
 // Rayon sphère POI = 2m réels, anneau = 5-8m réels
-//const POI_R  = 2;
-//const RING_R1 = 5;
-//const RING_R2 = 8;
-
-//const POI_R  = 1;
-//const RING_R1 = 2.5;
-//const RING_R2 = 4;
-
-const POI_R  = 0.5;
-const RING_R1 = 1.25;
-const RING_R2 = 2;
-
+const POI_R  = 2;
+const RING_R1 = 5;
+const RING_R2 = 8;
 const mGeo=new THREE.SphereGeometry(POI_R, 8, 8);
 const rBaseGeo=new THREE.RingGeometry(RING_R1, RING_R2, 20);
 rBaseGeo.rotateX(-Math.PI/2);
@@ -117,12 +108,14 @@ function buildPOIMarkers(){
 // que l'utilisateur sache qu'il faudra s'arrêter puis se tourner par là.
 const POI_ARROW_RADIUS = 40; // m — un peu avant les seuils de couleur/pause existants
 const POI_ARROW_MARGIN = 0.85; // reste dans [-0.85,0.85] en coordonnées écran normalisées
+let _arrowTargetPOI = null; // POI actuellement visé par la flèche — utilisé par le clic ci-dessous
 
 function updatePOIDirectionArrow(camPos) {
   const el = document.getElementById('poi-direction-arrow');
   if (!el) return;
   if (currentView !== 'fps' || (typeof poiOverlayOpen !== 'undefined' && poiOverlayOpen) || !poiObjects.length) {
     el.style.display = 'none';
+    _arrowTargetPOI = null;
     return;
   }
 
@@ -136,12 +129,20 @@ function updatePOIDirectionArrow(camPos) {
     const dist = Math.sqrt(dx*dx + dz*dz);
     if (dist <= POI_ARROW_RADIUS && dist < bestDist) { bestDist = dist; best = o; }
   }
-  if (!best) { el.style.display = 'none'; return; }
+  if (!best) { el.style.display = 'none'; _arrowTargetPOI = null; return; }
 
   const ndc = best.marker.position.clone().project(activeCamera);
   const behind = ndc.z > 1;
   const onScreen = !behind && Math.abs(ndc.x) <= POI_ARROW_MARGIN && Math.abs(ndc.y) <= POI_ARROW_MARGIN;
-  if (onScreen) { el.style.display = 'none'; return; } // déjà visible à l'écran, pas besoin d'indice
+  if (onScreen) { el.style.display = 'none'; _arrowTargetPOI = null; return; } // déjà visible à l'écran, pas besoin d'indice
+
+  _arrowTargetPOI = best;
+
+  // Cliquable UNIQUEMENT à l'arrêt : c'est le seul moment où lookYaw/lookPitch
+  // ne sont pas remis à zéro en continu par la marche (voir animate.js) — un
+  // clic pendant la marche recentrerait la vue pour une fraction de seconde
+  // avant que le retour automatique à 0 ne l'annule, sans effet utile.
+  el.classList.toggle('interactive', typeof isWalking !== 'undefined' && !isWalking);
 
   // Si le POI est derrière la caméra, on inverse pour pointer vers l'arrière du bon côté
   let x = behind ? -ndc.x : ndc.x;
@@ -159,3 +160,22 @@ function updatePOIDirectionArrow(camPos) {
   el.style.transform = `translate(-50%,-50%) rotate(${angleDeg}deg)`;
   el.style.display = 'flex';
 }
+
+// Clic sur la flèche = action EXPLICITE de l'utilisateur, donc cohérente avec
+// le principe "jamais de rotation de caméra automatique" : ici c'est
+// l'utilisateur qui la demande. Oriente lookYaw/lookPitch directement vers le
+// POI visé ; sans effet en marchant (voir le commentaire ci-dessus).
+document.getElementById('poi-direction-arrow').addEventListener('click', () => {
+  if (typeof isWalking !== 'undefined' && isWalking) return;
+  if (!_arrowTargetPOI) return;
+  const poiPos = _arrowTargetPOI.marker.position;
+  const camPos = activeCamera.position;
+  const dx = poiPos.x - camPos.x, dz = poiPos.z - camPos.z;
+  const horizDist = Math.sqrt(dx*dx + dz*dz);
+  if (horizDist < 0.001) return;
+  const tx = dx / horizDist, tz = dz / horizDist;
+  const dir = getDirOnPath(pathT).clone().normalize();
+  lookYaw = Math.atan2(dir.z*tx - dir.x*tz, dir.x*tx + dir.z*tz);
+  const dy = poiPos.y - camPos.y;
+  lookPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, Math.atan2(dy, horizDist)));
+});
