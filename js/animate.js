@@ -1,6 +1,7 @@
 // BOUCLE PRINCIPALE
 // ══════════════════════════════════════════════════════════
-const WALK_SPEED_MS = 1.35; // vitesse de marche humaine réaliste, m/s (~4.85 km/h)
+//const WALK_SPEED_MS = 1.35; // vitesse de marche humaine réaliste, m/s (~4.85 km/h)
+const WALK_SPEED_MS = 1.7;
 let lastFrameTime = performance.now();
 const TARGET_FPS  = _mobile ? 30 : 60;
 const FRAME_MIN   = 1000 / TARGET_FPS;
